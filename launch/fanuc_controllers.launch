@@ -1,0 +1,67 @@
+<launch>
+        <!-- Configuration -->
+        <arg name="rviz" default="true" />
+        <arg name="debug" default="false" />
+        <arg if="$(arg debug)" name="launch-prefix"
+                value="screen -d -m gdb -command=$(env HOME)/.ros/my_debug_log --ex run --args" />
+        <arg unless="$(arg debug)" name="launch-prefix" value="" />
+
+
+        <!-- Load robot_description to parameter server -->
+        <param name="robot_description"
+                command="$(find xacro)/xacro --inorder '$(find fanuc_cartesian_controller)/urdf/m10ia.xacro'" />
+        <include file="$(find fanuc_m10ia_support)/launch/robot_interface_streaming_m10ia.launch">
+                <arg name="robot_ip" value="192.168.2.4" />
+        </include>
+
+        <!-- Robot state publisher -->
+        <node pkg="robot_state_publisher" type="robot_state_publisher" name="robot_state_publisher">
+                <param name="publish_frequency" type="double" value="42" />
+                <param name="tf_prefix" type="string" value="" />
+        </node>
+
+        <!-- Load the hardware interface node -->
+        <include file="$(find fanuc_hardware_interface)/launch/fanuc_position_controllers.launch" />
+
+        <!-- Control motion and compliance controller with one handle -->
+        <remap from="my_motion_control_handle/target_frame" to="target_frame" />
+        <remap from="my_cartesian_motion_controller/target_frame" to="target_frame" />
+        <remap from="my_cartesian_compliance_controller/target_frame" to="target_frame" />
+
+        <!-- Control wrenches via one topic -->
+        <remap from="my_cartesian_force_controller/target_wrench" to="target_wrench" />
+        <remap from="my_cartesian_force_controller/ft_sensor_wrench" to="wrench" />
+        <remap from="my_cartesian_compliance_controller/target_wrench" to="target_wrench" />
+        <remap from="my_cartesian_compliance_controller/ft_sensor_wrench" to="wrench" />
+
+        <!-- Joint state publisher -->
+        <node name="joint_state_controller_spawner" pkg="controller_manager" type="spawner"
+                args="joint_state_controller" respawn="false" output="screen" />
+
+        <!-- Spawn controllers -->
+        <node name="controller_spawner" pkg="controller_manager" type="spawner"
+                args="--stopped
+                my_cartesian_motion_controller
+                my_cartesian_force_controller
+                my_cartesian_compliance_controller
+                my_motion_control_handle
+                my_joint_to_cartesian_controller
+                joint_trajectory_controller
+                "
+        />
+
+        <!-- Spawn joint controller for testing my_joint_to_cartesian_controller  -->
+        <!-- Note: This controller should be loaded and started -->
+        <group ns="my_joint_to_cartesian_controller">
+                <node name="controller_spawner" pkg="controller_manager" type="spawner"
+                        args="joint_trajectory_controller" />
+        </group>
+
+        <!-- Visualization -->
+        <group if="$(arg rviz)">
+                <arg name="my_rviz"
+                        value="-d $(find fanuc_cartesian_controller)/etc/fanuc_cartesian.rviz" />
+                <node name="rviz" pkg="rviz" type="rviz" respawn="false" args="$(arg my_rviz)"
+                        output="screen" />
+        </group>
+</launch>
